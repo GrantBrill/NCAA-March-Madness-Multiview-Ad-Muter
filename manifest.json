@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "NCAA Multiview Auto-Audio Switcher",
+  "version": "1.0",
+  "description": "Automatically switches audio to the highest-ranked game not on a commercial break.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.ncaa.com/*"],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.ncaa.com/march-madness-live/multigame"],
+      "js": ["content.js"]
+    }
+  ]
+}

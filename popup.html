@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      width: 250px;
+      font-family: sans-serif;
+      padding: 10px;
+    }
+    .toggle-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 15px;
+    }
+    .game-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .game-item {
+      background: #eee;
+      margin-bottom: 5px;
+      padding: 10px;
+      cursor: grab;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+    }
+    .game-item:active {
+      cursor: grabbing;
+    }
+    .game-item.dragging {
+      opacity: 0.5;
+    }
+    .rank-num {
+      background: #333;
+      color: #fff;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 10px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="toggle-container">
+    <span>Auto-Switch Audio</span>
+    <input type="checkbox" id="enableSwitch">
+  </div>
+  <p>Ranking (Drag to reorder):</p>
+  <ul id="gameList" class="game-list">
+    <li class="game-item" draggable="true" data-id="topLeft">
+      <span class="rank-num">1</span> Top Left
+    </li>
+    <li class="game-item" draggable="true" data-id="topRight">
+      <span class="rank-num">2</span> Top Right
+    </li>
+    <li class="game-item" draggable="true" data-id="bottomLeft">
+      <span class="rank-num">3</span> Bottom Left
+    </li>
+    <li class="game-item" draggable="true" data-id="bottomRight">
+      <span class="rank-num">4</span> Bottom Right
+    </li>
+  </ul>
+  <script src="popup.js"></script>
+</body>
+</html>
