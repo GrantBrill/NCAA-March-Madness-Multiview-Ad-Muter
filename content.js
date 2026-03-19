@@ -102,6 +102,7 @@ function updateGameList() {
     const currentTeams = [];
 
     for (const [normalized, game] of Object.entries(games)) {
+        isOnCommercial(normalized, game.element);
         const expiration = commercialState.get(normalized) || 0;
         currentTeams.push({
             normalized: normalized,
@@ -112,6 +113,68 @@ function updateGameList() {
 
     if (currentTeams.length > 0) {
         chrome.storage.local.set({ detectedTeamsV2: currentTeams });
+    }
+}
+
+function updateOverlays() {
+    const rawGames = getGameElements();
+    const games = rawGames || {};
+    const now = Date.now();
+
+    // Clear any overlays for games that are no longer on the page
+    const playerIdsOnPage = rawGames ? Object.values(rawGames).map(g => g.element.getAttribute('data-player-id')) : [];
+    document.querySelectorAll('.ncaa-timer-overlay').forEach(ov => {
+        const ovId = ov.id.replace('ncaa-overlay-', '');
+        if (!playerIdsOnPage.includes(ovId)) {
+            ov.remove();
+        }
+    });
+
+    for (const [normalized, game] of Object.entries(games)) {
+        const expiration = commercialState.get(normalized) || 0;
+        const playerEl = game.element;
+        let overlay = document.getElementById(`ncaa-overlay-${game.element.getAttribute('data-player-id')}`);
+
+        if (expiration > now) {
+            const rect = playerEl.getBoundingClientRect();
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = `ncaa-overlay-${game.element.getAttribute('data-player-id')}`;
+                overlay.className = 'ncaa-timer-overlay';
+                // Style: big, bold, orange
+                Object.assign(overlay.style, {
+                    position: 'fixed',
+                    color: '#ff6600', // March Madness Orange
+                    fontSize: '64px',
+                    fontWeight: '900',
+                    fontFamily: 'sans-serif',
+                    textShadow: '3px 3px 6px rgba(0,0,0,0.8)',
+                    zIndex: '1000',
+                    pointerEvents: 'none',
+                    textAlign: 'center',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                });
+                document.body.appendChild(overlay);
+            }
+
+            // Sync overlay position with player element
+            Object.assign(overlay.style, {
+                top: `${rect.top}px`,
+                left: `${rect.left}px`,
+                width: `${rect.width}px`,
+                height: `${rect.height}px`
+            });
+
+            const remaining = Math.ceil((expiration - now) / 1000);
+            const minutes = Math.floor(remaining / 60);
+            const seconds = remaining % 60;
+            overlay.innerText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            overlay.style.display = 'flex';
+        } else if (overlay) {
+            overlay.style.display = 'none';
+        }
     }
 }
 
@@ -165,4 +228,8 @@ function switchAudio() {
 
 // Run frequently
 setInterval(switchAudio, 2000);
-setInterval(updateGameList, 5000);
+// Update the overlays and game list every second for a smooth countdown
+setInterval(() => {
+    updateGameList();
+    updateOverlays();
+}, 1000);
