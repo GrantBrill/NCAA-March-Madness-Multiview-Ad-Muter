@@ -15,5 +15,3 @@ This is a super simple chrome extension that automatically switches to another g
 
 Disclaimer:
 	This project was made quickly and sloppily with Google Jules, please use at your own risk (it should be fine, I think). 
-
-```
