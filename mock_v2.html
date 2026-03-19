@@ -40,9 +40,16 @@
                 slate.className = '_brandedSlate_1ri8z_33';
                 slate.innerText = 'COMMERCIAL';
                 game.appendChild(slate);
+                // Simulate the site switching to ALL CAPS during commercial
+                game.querySelector('.mml-subtitle-2').innerText = game.querySelector('.mml-subtitle-2').innerText.toUpperCase();
             } else {
                 const slate = game.querySelector('._brandedSlate_1ri8z_33');
-                if (slate) slate.remove();
+                if (slate) {
+                    slate.remove();
+                    // Restore to title case (mock-ish)
+                    let text = game.querySelector('.mml-subtitle-2').innerText;
+                    game.querySelector('.mml-subtitle-2').innerText = text.charAt(0) + text.slice(1).toLowerCase();
+                }
             }
         }
     </script>

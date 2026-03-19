@@ -26,15 +26,36 @@ async function renderGameList() {
   // If we are currently dragging, don't re-render as it messes up the drag operation
   if (document.querySelector('.dragging')) return;
 
-  // Merge ranking and detectedTeams
-  // Any team in ranking should come first in that order
-  // Any team in detectedTeams but NOT in ranking should be added at the end
-  const allTeams = [...new Set([...ranking, ...detectedTeams])];
+  // Deduplicate and merge rankings and detected teams CASE-INSENSITIVELY
+  // We'll use a map to store normalized names (lowercase) -> original names
+  const teamMap = new Map();
 
-  // Filter out any teams that are neither in ranking nor currently detected
-  const currentTeams = allTeams.filter(t => ranking.includes(t) || detectedTeams.includes(t));
+  // First, add existing rankings (which have priority)
+  ranking.forEach(name => {
+      const lower = name.toLowerCase();
+      if (!teamMap.has(lower)) {
+          teamMap.set(lower, name);
+      }
+  });
 
-  if (currentTeams.length === 0) {
+  // Next, add detected teams (if not already in ranking)
+  detectedTeams.forEach(name => {
+      const lower = name.toLowerCase();
+      if (!teamMap.has(lower)) {
+          teamMap.set(lower, name);
+      }
+  });
+
+  // Now we have a deduplicated set of teams.
+  // The current ranking list (normalized) should be used for order.
+  const allNormalized = [...new Set([...ranking.map(n => n.toLowerCase()), ...detectedTeams.map(n => n.toLowerCase())])];
+
+  // Only show teams that are in ranking or currently detected
+  // Actually, we should probably only show teams currently detected,
+  // OR keep rankings in the list if the user has already sorted them (to keep the list stable)
+  // Let's stick with: all teams that the user has ranked, plus any new ones found.
+
+  if (allNormalized.length === 0) {
     list.innerHTML = '';
     emptyMsg.style.display = 'block';
     return;
@@ -43,11 +64,12 @@ async function renderGameList() {
   emptyMsg.style.display = 'none';
   list.innerHTML = '';
 
-  currentTeams.forEach((teamName, index) => {
+  allNormalized.forEach((lowerName, index) => {
+    const originalName = teamMap.get(lowerName);
     const li = document.createElement('li');
     li.className = 'game-item';
     li.draggable = true;
-    li.dataset.id = teamName;
+    li.dataset.id = originalName; // We keep the "best" casing for the ID
 
     const rankNum = document.createElement('span');
     rankNum.className = 'rank-num';
@@ -55,7 +77,7 @@ async function renderGameList() {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'game-name';
-    nameSpan.innerText = teamName;
+    nameSpan.innerText = originalName;
 
     li.appendChild(rankNum);
     li.appendChild(nameSpan);
