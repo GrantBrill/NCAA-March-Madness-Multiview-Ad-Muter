@@ -1,4 +1,4 @@
-# NCAA March Madness Multiview Ad-Switcher
+# NCAA-March-Madness-Multiview-Ad-Muter
 
 This is a super simple chrome extension that automatically switches to another game when your currently selected game is in an ad-break.
 
