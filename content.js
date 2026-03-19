@@ -30,11 +30,8 @@ function getGameElements() {
 
   const games = {};
   players.forEach(p => {
-    // Try to find the team names in the subtitle element
     const titleEl = p.querySelector('.mml-subtitle-2');
     let teamName = titleEl ? titleEl.innerText.trim() : `Unknown Game (${p.getAttribute('data-player-id')})`;
-
-    // Normalize casing for internal logic
     const normalized = teamName.toLowerCase();
 
     games[normalized] = {
@@ -46,7 +43,9 @@ function getGameElements() {
   return games;
 }
 
-const commercialState = new Map(); // normalizedTeamName -> expirationTimestamp
+// normalizedTeamName -> { expirationTimestamp, lastSeenTimerText, streamTimeAtLastUpdate, localTimeAtLastUpdate }
+const commercialState = new Map();
+const lastSeenTeams = new Map(); // normalizedTeamName -> lastSeenTimestamp
 
 function isOnCommercial(normalizedTeamName, playerElement) {
   const text = playerElement.innerText || "";
@@ -57,29 +56,42 @@ function isOnCommercial(normalizedTeamName, playerElement) {
   const isCommercialVisible = text.toLowerCase().includes(indicator.toLowerCase()) || !!slateIndicator || !!adCounter;
 
   if (isCommercialVisible) {
-    let duration = 5000; // Sticky buffer: 5s if we can't find a timer
+    let timerText = "";
     const match = text.match(/Live coverage will return in:\s*(\d+):(\d+)/i);
     if (match) {
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      duration = ((minutes * 60 + seconds) + 2) * 1000;
+        timerText = `${match[1]}:${match[2]}`;
     } else if (adCounter) {
         const adMatch = adCounter.innerText.match(/(\d+):(\d+)/);
-        if (adMatch) {
-            const minutes = parseInt(adMatch[1], 10);
-            const seconds = parseInt(adMatch[2], 10);
-            duration = ((minutes * 60 + seconds) + 2) * 1000;
+        if (adMatch) timerText = `${adMatch[1]}:${adMatch[2]}`;
+    }
+
+    const state = commercialState.get(normalizedTeamName) || { expirationTimestamp: 0, lastSeenTimerText: "", streamTimeAtLastUpdate: 0, localTimeAtLastUpdate: 0 };
+
+    if (timerText && timerText !== state.lastSeenTimerText) {
+        const parts = timerText.split(':');
+        const streamSeconds = (parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10));
+        // Use +2s for the actual expiration/switching logic
+        state.expirationTimestamp = Date.now() + (streamSeconds + 2) * 1000;
+        state.lastSeenTimerText = timerText;
+        state.streamTimeAtLastUpdate = streamSeconds;
+        state.localTimeAtLastUpdate = Date.now();
+        commercialState.set(normalizedTeamName, state);
+    } else if (!timerText && !!(slateIndicator || adCounter)) {
+        // If no text but slate/ad counter visible, use a 5s sticky buffer if not already set or if expired
+        if (Date.now() > state.expirationTimestamp) {
+            state.expirationTimestamp = Date.now() + 5000;
+            state.streamTimeAtLastUpdate = 5;
+            state.localTimeAtLastUpdate = Date.now();
+            commercialState.set(normalizedTeamName, state);
         }
     }
 
-    const expiration = Date.now() + duration;
-    commercialState.set(normalizedTeamName, expiration);
     return true;
   }
 
-  const expiration = commercialState.get(normalizedTeamName);
-  if (expiration) {
-    if (Date.now() < expiration) {
+  const state = commercialState.get(normalizedTeamName);
+  if (state) {
+    if (Date.now() < state.expirationTimestamp) {
       if (isActive(playerElement)) {
         commercialState.delete(normalizedTeamName);
         return false;
@@ -100,10 +112,14 @@ function isActive(playerElement) {
 function updateGameList() {
     const games = getGameElements();
     const currentTeams = [];
+    const now = Date.now();
 
     for (const [normalized, game] of Object.entries(games)) {
         isOnCommercial(normalized, game.element);
-        const expiration = commercialState.get(normalized) || 0;
+        lastSeenTeams.set(normalized, now);
+
+        const state = commercialState.get(normalized);
+        const expiration = state ? state.expirationTimestamp : 0;
         currentTeams.push({
             normalized: normalized,
             originalName: game.originalName,
@@ -114,6 +130,26 @@ function updateGameList() {
     if (currentTeams.length > 0) {
         chrome.storage.local.set({ detectedTeamsV2: currentTeams });
     }
+
+    // Dead entry removal: if a ranked team hasn't been seen for 60 seconds, remove it
+    const staleLimit = 60000;
+    const currentRanking = [...ranking];
+    const filteredRanking = currentRanking.filter(name => {
+        const normalized = name.toLowerCase();
+        const lastSeen = lastSeenTeams.get(normalized);
+        // If it's on the page right now or was seen recently, keep it.
+        // Also keep it if it was never seen (maybe user just added it) but give it a timeout eventually?
+        // Let's say if we have a lastSeen, it must be recent.
+        if (lastSeen && (now - lastSeen > staleLimit)) {
+            return false;
+        }
+        return true;
+    });
+
+    if (filteredRanking.length !== currentRanking.length) {
+        console.log(`[NCAA Switcher] Removing dead entries. Before: ${currentRanking.length}, After: ${filteredRanking.length}`);
+        chrome.storage.sync.set({ ranking: filteredRanking });
+    }
 }
 
 function updateOverlays() {
@@ -121,7 +157,6 @@ function updateOverlays() {
     const games = rawGames || {};
     const now = Date.now();
 
-    // Clear any overlays for games that are no longer on the page
     const playerIdsOnPage = rawGames ? Object.values(rawGames).map(g => g.element.getAttribute('data-player-id')) : [];
     document.querySelectorAll('.ncaa-timer-overlay').forEach(ov => {
         const ovId = ov.id.replace('ncaa-overlay-', '');
@@ -131,20 +166,19 @@ function updateOverlays() {
     });
 
     for (const [normalized, game] of Object.entries(games)) {
-        const expiration = commercialState.get(normalized) || 0;
+        const state = commercialState.get(normalized);
         const playerEl = game.element;
         let overlay = document.getElementById(`ncaa-overlay-${game.element.getAttribute('data-player-id')}`);
 
-        if (expiration > now) {
+        if (state && state.expirationTimestamp > now) {
             const rect = playerEl.getBoundingClientRect();
             if (!overlay) {
                 overlay = document.createElement('div');
                 overlay.id = `ncaa-overlay-${game.element.getAttribute('data-player-id')}`;
                 overlay.className = 'ncaa-timer-overlay';
-                // Style: big, bold, orange
                 Object.assign(overlay.style, {
                     position: 'fixed',
-                    color: '#ff6600', // March Madness Orange
+                    color: '#ff6600',
                     fontSize: '64px',
                     fontWeight: '900',
                     fontFamily: 'sans-serif',
@@ -159,7 +193,6 @@ function updateOverlays() {
                 document.body.appendChild(overlay);
             }
 
-            // Sync overlay position with player element
             Object.assign(overlay.style, {
                 top: `${rect.top}px`,
                 left: `${rect.left}px`,
@@ -167,11 +200,34 @@ function updateOverlays() {
                 height: `${rect.height}px`
             });
 
-            const remaining = Math.ceil((expiration - now) / 1000);
-            const minutes = Math.floor(remaining / 60);
-            const seconds = remaining % 60;
-            overlay.innerText = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-            overlay.style.display = 'flex';
+            // Priority 1: Use the exact timer text currently visible on the page
+            const playerText = playerEl.innerText || "";
+            const match = playerText.match(/Live coverage will return in:\s*(\d+):(\d+)/i);
+            const adCounter = playerEl.querySelector('._adCounter_q31gh_174');
+            let displayTime = "";
+
+            if (match) {
+                displayTime = `${match[1]}:${match[2]}`;
+            } else if (adCounter) {
+                const adMatch = adCounter.innerText.match(/(\d+):(\d+)/);
+                if (adMatch) displayTime = `${adMatch[1]}:${adMatch[2]}`;
+            }
+
+            // Priority 2: Use predicted time if the stream timer isn't currently visible
+            if (!displayTime && state.streamTimeAtLastUpdate > 0) {
+                const elapsed = Math.floor((now - state.localTimeAtLastUpdate) / 1000);
+                const remaining = Math.max(0, state.streamTimeAtLastUpdate - elapsed);
+                const minutes = Math.floor(remaining / 60);
+                const seconds = remaining % 60;
+                displayTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+
+            if (displayTime) {
+                overlay.innerText = displayTime;
+                overlay.style.display = 'flex';
+            } else {
+                overlay.style.display = 'none';
+            }
         } else if (overlay) {
             overlay.style.display = 'none';
         }
@@ -185,13 +241,10 @@ function switchAudio() {
   const normalizedTeamsOnPage = Object.keys(games);
   if (normalizedTeamsOnPage.length === 0) return;
 
-  // Update detected teams for the popup
   updateGameList();
 
-  // Find the highest ranked game that is NOT on commercial
   let targetNormalized = null;
 
-  // First check ranked games
   for (const name of ranking) {
     const normalizedRankedName = name.toLowerCase();
     const game = games[normalizedRankedName];
@@ -201,8 +254,6 @@ function switchAudio() {
     }
   }
 
-  // If none of our ranked games are available, or we haven't ranked them yet,
-  // pick any game that isn't on commercial
   if (!targetNormalized) {
       for (const normalized of normalizedTeamsOnPage) {
           const game = games[normalized];
@@ -213,12 +264,10 @@ function switchAudio() {
       }
   }
 
-  // If we found a game and it's not already active, click it
   if (targetNormalized) {
     const targetEl = games[targetNormalized].element;
     if (!isActive(targetEl)) {
         console.log(`[NCAA Switcher] Switching audio to: ${targetNormalized}`);
-        // Reset commercial state since we're switching to it
         commercialState.delete(targetNormalized);
         const clickTarget = targetEl.querySelector('video') || targetEl.querySelector('._videoContainer_q31gh_123') || targetEl;
         clickTarget.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -226,9 +275,7 @@ function switchAudio() {
   }
 }
 
-// Run frequently
 setInterval(switchAudio, 2000);
-// Update the overlays and game list every second for a smooth countdown
 setInterval(() => {
     updateGameList();
     updateOverlays();
