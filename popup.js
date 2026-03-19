@@ -29,28 +29,31 @@ async function renderGameList() {
 
   const teamMap = new Map();
 
-  // Add existing rankings (which have priority)
-  ranking.forEach(name => {
-      const lower = name.toLowerCase();
-      if (!teamMap.has(lower)) {
-          teamMap.set(lower, { originalName: name });
-      }
-  });
-
-  // Add or update with detected teams
+  // Only show teams that are currently detected
+  const detectedMap = new Map();
   detectedTeams.forEach(game => {
-      const lower = game.normalized;
-      if (!teamMap.has(lower)) {
-          teamMap.set(lower, { originalName: game.originalName });
-      } else {
-          const existing = teamMap.get(lower);
-          existing.originalName = game.originalName;
-      }
+      detectedMap.set(game.normalized, game.originalName);
   });
 
-  const allNormalized = [...new Set([...ranking.map(n => n.toLowerCase()), ...detectedTeams.map(g => g.normalized)])];
+  // Maintain ranking order for detected teams
+  const rankedDetected = ranking
+      .filter(name => detectedMap.has(name.toLowerCase()))
+      .map(name => ({
+          normalized: name.toLowerCase(),
+          originalName: detectedMap.get(name.toLowerCase())
+      }));
 
-  if (allNormalized.length === 0) {
+  // Add newly detected teams that are not yet in ranking
+  const unrankedDetected = detectedTeams
+      .filter(game => !ranking.some(r => r.toLowerCase() === game.normalized))
+      .map(game => ({
+          normalized: game.normalized,
+          originalName: game.originalName
+      }));
+
+  const allToShow = [...rankedDetected, ...unrankedDetected];
+
+  if (allToShow.length === 0) {
     list.innerHTML = '';
     emptyMsg.style.display = 'block';
     return;
@@ -59,13 +62,12 @@ async function renderGameList() {
   emptyMsg.style.display = 'none';
   list.innerHTML = '';
 
-  allNormalized.forEach((lowerName, index) => {
-    const gameInfo = teamMap.get(lowerName);
+  allToShow.forEach((gameInfo, index) => {
     const li = document.createElement('li');
     li.className = 'game-item';
     li.draggable = true;
     li.dataset.id = gameInfo.originalName;
-    li.dataset.normalized = lowerName;
+    li.dataset.normalized = gameInfo.normalized;
 
     const rankNum = document.createElement('span');
     rankNum.className = 'rank-num';

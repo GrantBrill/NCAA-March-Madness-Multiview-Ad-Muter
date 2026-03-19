@@ -70,9 +70,7 @@ function updateGameList() {
         });
     }
 
-    if (currentTeams.length > 0) {
-        chrome.storage.local.set({ detectedTeamsV3: currentTeams });
-    }
+    chrome.storage.local.set({ detectedTeamsV3: currentTeams });
 }
 
 function switchAudio() {
@@ -116,4 +114,3 @@ function switchAudio() {
 }
 
 setInterval(switchAudio, 2000);
-setInterval(updateGameList, 5000);

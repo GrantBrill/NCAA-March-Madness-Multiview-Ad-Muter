@@ -4,7 +4,7 @@
   "version": "1.0",
   "description": "Automatically switches audio to the highest-ranked game not on a commercial break.",
   "permissions": ["storage"],
-  "host_permissions": ["https://www.ncaa.com/*"],
+  "host_permissions": ["https://www.ncaa.com/march-madness-live/multigame"],
   "action": {
     "default_popup": "popup.html"
   },
