@@ -99,10 +99,19 @@ function isActive(playerElement) {
 
 function updateGameList() {
     const games = getGameElements();
-    // Use the original (better cased) names for display but store them uniquely by normalized name
-    const currentTeams = Object.values(games).map(g => g.originalName);
+    const currentTeams = [];
+
+    for (const [normalized, game] of Object.entries(games)) {
+        const expiration = commercialState.get(normalized) || 0;
+        currentTeams.push({
+            normalized: normalized,
+            originalName: game.originalName,
+            commercialUntil: expiration
+        });
+    }
+
     if (currentTeams.length > 0) {
-        chrome.storage.local.set({ detectedTeams: currentTeams });
+        chrome.storage.local.set({ detectedTeamsV2: currentTeams });
     }
 }
 

@@ -1,5 +1,6 @@
 let ranking = [];
 let enabled = false;
+let detectedTeams = []; // Array of { normalized, originalName, commercialUntil }
 
 // Load initial state
 chrome.storage.sync.get(['ranking', 'enabled'], (data) => {
@@ -20,40 +21,36 @@ async function renderGameList() {
   const emptyMsg = document.getElementById('emptyMsg');
 
   // Get currently detected teams from local storage
-  const localData = await chrome.storage.local.get(['detectedTeams']);
-  const detectedTeams = localData.detectedTeams || [];
+  const localData = await chrome.storage.local.get(['detectedTeamsV2']);
+  detectedTeams = localData.detectedTeamsV2 || [];
 
   // If we are currently dragging, don't re-render as it messes up the drag operation
   if (document.querySelector('.dragging')) return;
 
-  // Deduplicate and merge rankings and detected teams CASE-INSENSITIVELY
-  // We'll use a map to store normalized names (lowercase) -> original names
   const teamMap = new Map();
 
-  // First, add existing rankings (which have priority)
+  // Add existing rankings (which have priority)
   ranking.forEach(name => {
       const lower = name.toLowerCase();
       if (!teamMap.has(lower)) {
-          teamMap.set(lower, name);
+          teamMap.set(lower, { originalName: name, commercialUntil: 0 });
       }
   });
 
-  // Next, add detected teams (if not already in ranking)
-  detectedTeams.forEach(name => {
-      const lower = name.toLowerCase();
+  // Add or update with detected teams
+  detectedTeams.forEach(game => {
+      const lower = game.normalized;
       if (!teamMap.has(lower)) {
-          teamMap.set(lower, name);
+          teamMap.set(lower, { originalName: game.originalName, commercialUntil: game.commercialUntil });
+      } else {
+          // Update the commercial status and potentially the original name if it's more current
+          const existing = teamMap.get(lower);
+          existing.commercialUntil = game.commercialUntil;
+          existing.originalName = game.originalName;
       }
   });
 
-  // Now we have a deduplicated set of teams.
-  // The current ranking list (normalized) should be used for order.
-  const allNormalized = [...new Set([...ranking.map(n => n.toLowerCase()), ...detectedTeams.map(n => n.toLowerCase())])];
-
-  // Only show teams that are in ranking or currently detected
-  // Actually, we should probably only show teams currently detected,
-  // OR keep rankings in the list if the user has already sorted them (to keep the list stable)
-  // Let's stick with: all teams that the user has ranked, plus any new ones found.
+  const allNormalized = [...new Set([...ranking.map(n => n.toLowerCase()), ...detectedTeams.map(g => g.normalized)])];
 
   if (allNormalized.length === 0) {
     list.innerHTML = '';
@@ -65,11 +62,12 @@ async function renderGameList() {
   list.innerHTML = '';
 
   allNormalized.forEach((lowerName, index) => {
-    const originalName = teamMap.get(lowerName);
+    const gameInfo = teamMap.get(lowerName);
     const li = document.createElement('li');
     li.className = 'game-item';
     li.draggable = true;
-    li.dataset.id = originalName; // We keep the "best" casing for the ID
+    li.dataset.id = gameInfo.originalName;
+    li.dataset.normalized = lowerName;
 
     const rankNum = document.createElement('span');
     rankNum.className = 'rank-num';
@@ -77,10 +75,18 @@ async function renderGameList() {
 
     const nameSpan = document.createElement('span');
     nameSpan.className = 'game-name';
-    nameSpan.innerText = originalName;
+    nameSpan.innerText = gameInfo.originalName;
+
+    const statusContainer = document.createElement('div');
+    statusContainer.className = 'status-container';
+
+    const timerSpan = document.createElement('span');
+    timerSpan.className = 'timer';
+    statusContainer.appendChild(timerSpan);
 
     li.appendChild(rankNum);
     li.appendChild(nameSpan);
+    li.appendChild(statusContainer);
     list.appendChild(li);
 
     li.addEventListener('dragstart', () => li.classList.add('dragging'));
@@ -89,6 +95,30 @@ async function renderGameList() {
       saveRanking();
     });
   });
+
+  updateTimers();
+}
+
+function updateTimers() {
+  const items = document.querySelectorAll('.game-item');
+  const now = Date.now();
+
+  items.forEach(item => {
+    const normalized = item.dataset.normalized;
+    const game = detectedTeams.find(g => g.normalized === normalized);
+    const timerEl = item.querySelector('.timer');
+
+    if (game && game.commercialUntil > now) {
+      const remaining = Math.ceil((game.commercialUntil - now) / 1000);
+      const minutes = Math.floor(remaining / 60);
+      const seconds = remaining % 60;
+      timerEl.innerText = `AD: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+      timerEl.classList.add('on-commercial');
+    } else {
+      timerEl.innerText = 'LIVE';
+      timerEl.classList.remove('on-commercial');
+    }
+  });
 }
 
 function saveRanking() {
@@ -96,7 +126,6 @@ function saveRanking() {
   ranking = items.map(item => item.dataset.id);
   chrome.storage.sync.set({ ranking });
 
-  // Refresh rank numbers
   items.forEach((item, index) => {
     item.querySelector('.rank-num').innerText = index + 1;
   });
@@ -115,5 +144,7 @@ list.addEventListener('dragover', e => {
   list.insertBefore(draggingItem, nextSibling);
 });
 
-// Periodically refresh the list to catch new games
-setInterval(renderGameList, 5000);
+// Refresh the list for new games and commercial status
+setInterval(renderGameList, 3000);
+// Update the countdowns every second for a smooth display
+setInterval(updateTimers, 1000);

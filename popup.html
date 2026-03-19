@@ -9,10 +9,12 @@
       --item-bg: #2d2d2d;
       --item-border: #444;
       --item-dragging: #3d3d3d;
+      --live-green: #4caf50;
+      --ad-red: #f44336;
     }
 
     body {
-      width: 280px;
+      width: 320px;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
       background-color: var(--bg);
       color: var(--text);
@@ -125,9 +127,26 @@
     .game-name {
       font-size: 13px;
       font-weight: 500;
+      flex-grow: 1;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      margin-right: 10px;
+    }
+
+    .timer {
+      font-size: 10px;
+      font-weight: bold;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #fff;
+      background-color: var(--live-green);
+      min-width: 45px;
+      text-align: center;
+    }
+
+    .timer.on-commercial {
+      background-color: var(--ad-red);
     }
 
     .empty-msg {
