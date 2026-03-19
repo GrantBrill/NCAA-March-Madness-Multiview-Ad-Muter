@@ -10,55 +10,107 @@ chrome.storage.sync.get(['ranking', 'enabled'], (data) => {
 // Listen for changes in storage
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'sync') {
-    if (changes.ranking) ranking = changes.ranking.newValue;
-    if (changes.enabled) enabled = changes.enabled.newValue;
+    if (changes.ranking) {
+      ranking = changes.ranking.newValue;
+      console.log("[NCAA Switcher] Ranking updated:", ranking);
+    }
+    if (changes.enabled) {
+      enabled = changes.enabled.newValue;
+      console.log("[NCAA Switcher] Switcher " + (enabled ? "ENABLED" : "DISABLED"));
+    }
   }
 });
 
 /**
- * Maps the 4-game layout to specific elements on the page.
- * The user mentioned top-left, top-right, bottom-left, bottom-right.
- * Based on common grid layouts and the provided HTML snippet, we need to find
- * how the site orders these in the DOM.
+ * Maps the multiview layout to specific quadrants.
+ * Handles 2, 3, and 4 game layouts by identifying which quadrant a game's center falls into.
  */
 function getGameElements() {
-  // According to the user, there are 4 games in a 2x2 grid.
-  // The provided HTML shows a container like:
-  // <div class="_p3_1o8ii_199 _player_1o8ii_112 _primary_1o8ii_119" data-player-id="205">
-  // We filter by visibility and size to avoid hidden elements or small icons.
   const players = Array.from(document.querySelectorAll('div[data-player-id]'))
     .filter(el => {
       const rect = el.getBoundingClientRect();
+      // Only consider elements that are large enough to be actual video players
       return rect.width > 100 && rect.height > 100;
     });
 
   if (players.length === 0) return null;
 
-  // Sort them by their position on the screen to reliably map to the labels
-  const sortedByPos = players.sort((a, b) => {
-    const rectA = a.getBoundingClientRect();
-    const rectB = b.getBoundingClientRect();
-    // Compare Y first (top vs bottom) with a threshold, then X (left vs right)
-    if (Math.abs(rectA.top - rectB.top) > 50) {
-      return rectA.top - rectB.top;
-    }
-    return rectA.left - rectB.left;
+  // Determine the bounding box of the entire multiview area
+  let minTop = Infinity, maxBottom = -Infinity, minLeft = Infinity, maxRight = -Infinity;
+  players.forEach(p => {
+    const r = p.getBoundingClientRect();
+    if (r.top < minTop) minTop = r.top;
+    if (r.bottom > maxBottom) maxBottom = r.bottom;
+    if (r.left < minLeft) minLeft = r.left;
+    if (r.right > maxRight) maxRight = r.right;
   });
 
-  const games = {};
-  if (sortedByPos[0]) games.topLeft = sortedByPos[0];
-  if (sortedByPos[1]) games.topRight = sortedByPos[1];
-  if (sortedByPos[2]) games.bottomLeft = sortedByPos[2];
-  if (sortedByPos[3]) games.bottomRight = sortedByPos[3];
+  const midY = (minTop + maxBottom) / 2;
+  const midX = (minLeft + maxRight) / 2;
 
+  const games = {};
+  players.forEach(p => {
+    const r = p.getBoundingClientRect();
+    const cy = (r.top + r.bottom) / 2;
+    const cx = (r.left + r.right) / 2;
+
+    // Use a small epsilon (10px) to handle alignment edge cases
+    // and favor 'top' and 'Left' for games that might span the center.
+    let vertical = (cy < midY + 10) ? 'top' : 'bottom';
+    let horizontal = (cx < midX + 10) ? 'Left' : 'Right';
+
+    const slot = vertical + horizontal;
+    // In case of multiple games in a quadrant (shouldn't happen), first one found wins
+    if (!games[slot]) {
+      games[slot] = p;
+    }
+  });
+
+  console.log(`[NCAA Switcher] Found ${players.length} games. Mapped slots:`, Object.keys(games));
   return games;
 }
 
+const commercialState = new Map(); // playerId -> expirationTimestamp
+
 function isOnCommercial(playerElement) {
-  // Look for "Live coverage will return in:"
-  // Based on the snippet: <span class="mml-caption-1">Live coverage will return in: 1:58</span>
-  const textContent = playerElement.innerText || "";
-  return textContent.includes("Live coverage will return in:");
+  const playerId = playerElement.getAttribute('data-player-id');
+  const text = playerElement.innerText || "";
+  const indicator = "Live coverage will return in:";
+
+  if (text.toLowerCase().includes(indicator.toLowerCase())) {
+    let duration = 30000; // Default 30s if we can't parse time
+    const match = text.match(/Live coverage will return in:\s*(\d+):(\d+)/i);
+    if (match) {
+      const minutes = parseInt(match[1], 10);
+      const seconds = parseInt(match[2], 10);
+      duration = ((minutes * 60 + seconds) + 2) * 1000; // +2s buffer as requested
+    }
+
+    const expiration = Date.now() + duration;
+    commercialState.set(playerId, expiration);
+    console.log(`[NCAA Switcher] Game ${playerId} detected on commercial. Locked for ${Math.round(duration/1000)}s`);
+    return true;
+  }
+
+  // Check if we have a cached commercial state
+  const expiration = commercialState.get(playerId);
+  if (expiration) {
+    if (Date.now() < expiration) {
+      // If it's active and we DON'T see the text, it might have come back early
+      if (isActive(playerElement)) {
+        commercialState.delete(playerId);
+        console.log(`[NCAA Switcher] Game ${playerId} returned early or user manually switched to it.`);
+        return false;
+      }
+      return true;
+    } else {
+      // Expiration reached
+      commercialState.delete(playerId);
+      console.log(`[NCAA Switcher] Commercial lock expired for Game ${playerId}. Checking if it's back...`);
+    }
+  }
+
+  return false;
 }
 
 function isActive(playerElement) {
@@ -73,6 +125,7 @@ function isActive(playerElement) {
 function switchAudio() {
   if (!enabled) return;
 
+  console.log("[NCAA Switcher] Checking audio focus...");
   const games = getGameElements();
   if (!games) return;
 
