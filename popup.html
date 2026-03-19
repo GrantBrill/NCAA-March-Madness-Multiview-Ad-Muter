@@ -2,71 +2,159 @@
 <html>
 <head>
   <style>
-    body {
-      width: 250px;
-      font-family: sans-serif;
-      padding: 10px;
+    :root {
+      --bg: #1a1a1a;
+      --text: #f0f0f0;
+      --accent: #ff6600; /* March Madness orange */
+      --item-bg: #2d2d2d;
+      --item-border: #444;
+      --item-dragging: #3d3d3d;
     }
-    .toggle-container {
+
+    body {
+      width: 280px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 15px;
+      margin: 0;
+    }
+
+    .header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 15px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 10px;
     }
+
+    .header h2 {
+      margin: 0;
+      font-size: 16px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .toggle-container {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Simple toggle switch */
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 40px;
+      height: 20px;
+    }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-color: #555;
+      transition: .4s;
+      border-radius: 20px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 14px; width: 14px;
+      left: 3px; bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: var(--accent); }
+    input:checked + .slider:before { transform: translateX(20px); }
+
+    .instructions {
+      font-size: 11px;
+      color: #aaa;
+      margin-bottom: 10px;
+    }
+
     .game-list {
       list-style: none;
       padding: 0;
       margin: 0;
     }
+
     .game-item {
-      background: #eee;
-      margin-bottom: 5px;
-      padding: 10px;
+      background-color: var(--item-bg);
+      border: 1px solid var(--item-border);
+      margin-bottom: 8px;
+      padding: 12px;
       cursor: grab;
-      border-radius: 4px;
+      border-radius: 6px;
       display: flex;
       align-items: center;
+      transition: background-color 0.2s;
     }
+
+    .game-item:hover {
+      background-color: #383838;
+    }
+
     .game-item:active {
       cursor: grabbing;
     }
+
     .game-item.dragging {
       opacity: 0.5;
+      background-color: var(--item-dragging);
     }
+
     .rank-num {
-      background: #333;
+      background-color: var(--accent);
       color: #fff;
-      width: 20px;
-      height: 20px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-right: 10px;
+      margin-right: 12px;
+      font-size: 13px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    .game-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .empty-msg {
+      text-align: center;
+      color: #666;
       font-size: 12px;
+      margin-top: 20px;
     }
   </style>
 </head>
 <body>
-  <div class="toggle-container">
-    <span>Auto-Switch Audio</span>
-    <input type="checkbox" id="enableSwitch">
+  <div class="header">
+    <h2>NCAA Switcher</h2>
+    <div class="toggle-container">
+      <label class="switch">
+        <input type="checkbox" id="enableSwitch">
+        <span class="slider"></span>
+      </label>
+    </div>
   </div>
-  <p>Ranking (Drag to reorder):</p>
+
+  <p class="instructions">Drag games to set audio priority:</p>
   <ul id="gameList" class="game-list">
-    <li class="game-item" draggable="true" data-id="topLeft">
-      <span class="rank-num">1</span> Top Left
-    </li>
-    <li class="game-item" draggable="true" data-id="topRight">
-      <span class="rank-num">2</span> Top Right
-    </li>
-    <li class="game-item" draggable="true" data-id="bottomLeft">
-      <span class="rank-num">3</span> Bottom Left
-    </li>
-    <li class="game-item" draggable="true" data-id="bottomRight">
-      <span class="rank-num">4</span> Bottom Right
-    </li>
+    <!-- Items dynamically added here -->
   </ul>
+  <div id="emptyMsg" class="empty-msg" style="display:none;">No games detected...</div>
+
   <script src="popup.js"></script>
 </body>
 </html>
